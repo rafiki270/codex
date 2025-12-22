@@ -937,8 +937,14 @@ async fn handle_token_count_event(
     if let Some(info) = info {
         if let Some(usage_reporter) = usage_reporter {
             let last_usage = info.last_token_usage.clone();
+            let session_total_tokens = info.total_token_usage.total_tokens.max(0);
             usage_reporter
-                .report_usage(conversation_id, turn_id.clone(), &last_usage)
+                .report_usage(
+                    conversation_id,
+                    turn_id.clone(),
+                    &last_usage,
+                    session_total_tokens,
+                )
                 .await;
         }
         let notification = ThreadTokenUsageUpdatedNotification {

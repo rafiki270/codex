@@ -76,12 +76,13 @@ impl UsageReporter {
         conversation_id: ConversationId,
         turn_id: String,
         usage: &TokenUsage,
+        session_total_tokens: i64,
     ) {
         if should_skip_usage(usage) {
             return;
         }
 
-        let snapshot = UsageSnapshot::from(usage);
+        let snapshot = UsageSnapshot::new(usage, session_total_tokens);
         let key = TurnUsageKey::new(conversation_id, &turn_id);
         let context = {
             let mut state = self.state.lock().await;
@@ -196,16 +197,18 @@ struct UsageSnapshot {
     output_tokens: i64,
     reasoning_output_tokens: i64,
     total_tokens: i64,
+    session_total_tokens: i64,
 }
 
-impl From<&TokenUsage> for UsageSnapshot {
-    fn from(usage: &TokenUsage) -> Self {
+impl UsageSnapshot {
+    fn new(usage: &TokenUsage, session_total_tokens: i64) -> Self {
         Self {
             input_tokens: usage.input_tokens,
             cached_input_tokens: usage.cached_input_tokens,
             output_tokens: usage.output_tokens,
             reasoning_output_tokens: usage.reasoning_output_tokens,
             total_tokens: usage.total_tokens,
+            session_total_tokens,
         }
     }
 }

@@ -1058,3 +1058,5 @@ Valid values:
 | `forced_login_method`                            | `chatgpt` \| `api`                                                | Only allow Codex to be used with ChatGPT or API keys.                                                                           |
 | `forced_chatgpt_workspace_id`                    | string (uuid)                                                     | Only allow Codex to be used with the specified ChatGPT workspace.                                                               |
 | `cli_auth_credentials_store`                     | `file` \| `keyring` \| `auto`                                     | Where to store CLI login credentials (default: `file`).                                                                         |
+
+Note: `CODEX_SYSTEM_PROMPT_FILE` is an environment variable shortcut for `--system-prompt-file` and is recommended for containerized runs.

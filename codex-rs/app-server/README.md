@@ -358,6 +358,31 @@ There are additional item-specific events:
 
 - `ContextWindowExceeded`
 - `UsageLimitExceeded`
+
+## Usage reporting (optional)
+
+When running Codex inside AirForge, the app-server can post LLM usage events to the internal API after each provider response.
+
+Required environment variables:
+
+- `AIRFORGE_API_BASE_URL` (base API URL, e.g. `https://api.airforge.ai`)
+- `INTERNAL_SHARED_CODE` (shared internal auth code for `/internal/usage/llm`)
+- `AIRFORGE_WORKSPACE_ID` (workspace identifier)
+
+Optional environment variables:
+
+- `AIRFORGE_SESSION_ID` (override session id; defaults to conversation id)
+- `AIRFORGE_USER_ID` (attach a user id when available)
+- `AIRFORGE_USAGE_ITEM_TYPE` (defaults to `llm_run`)
+
+Credits rate configuration (all values are credits per 1k tokens):
+
+- `AIRFORGE_LLM_CREDITS_PER_1K_TOKENS` (base rate for input/output)
+- `AIRFORGE_LLM_CREDITS_PER_1K_INPUT_TOKENS` (override input rate)
+- `AIRFORGE_LLM_CREDITS_PER_1K_OUTPUT_TOKENS` (override output rate)
+- `AIRFORGE_LLM_CREDITS_PER_1K_CACHED_INPUT_TOKENS` (cached input rate; defaults to 0)
+
+Usage payloads use the provider `total_tokens` for `tokensUsed` and include an `info` breakdown with input, cached input, non-cached input, output, reasoning output, totals, and the rates applied.
 - `HttpConnectionFailed { httpStatusCode? }`: upstream HTTP failures including 4xx/5xx
 - `ResponseStreamConnectionFailed { httpStatusCode? }`: failure to connect to the response SSE stream
 - `ResponseStreamDisconnected { httpStatusCode? }`: disconnect of the response SSE stream in the middle of a turn before completion

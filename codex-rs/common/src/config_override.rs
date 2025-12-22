@@ -43,6 +43,7 @@ pub struct CliConfigOverrides {
         long = "system-prompt-file",
         value_name = "FILE",
         value_hint = ValueHint::FilePath,
+        env = "CODEX_SYSTEM_PROMPT_FILE",
         global = true,
     )]
     pub system_prompt_file: Option<PathBuf>,
