@@ -1,4 +1,5 @@
 Generate a file named AGENTS.md that serves as a contributor guide for this repository.
+Also create an empty file named general-prompt.md in the same directory if it does not already exist. Do not add content to general-prompt.md.
 Your goal is to produce a clear, concise, and well-structured document with descriptive headings and actionable explanations for each section.
 Follow the outline below, but adapt as needed — add sections if relevant, and omit those that do not apply to this project.
 

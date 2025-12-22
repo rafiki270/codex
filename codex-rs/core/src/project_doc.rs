@@ -1,6 +1,7 @@
 //! Project-level documentation discovery.
 //!
 //! Project-level documentation is primarily stored in files named `AGENTS.md`.
+//! Optional `general-prompt.md` files are appended when present.
 //! Additional fallback filenames can be configured via `project_doc_fallback_filenames`.
 //! We include the concatenation of all files found along the path from the
 //! repository root to the current working directory as follows:
@@ -8,9 +9,9 @@
 //! 1.  Determine the Git repository root by walking upwards from the current
 //!     working directory until a `.git` directory or file is found. If no Git
 //!     root is found, only the current working directory is considered.
-//! 2.  Collect every `AGENTS.md` found from the repository root down to the
-//!     current working directory (inclusive) and concatenate their contents in
-//!     that order.
+//! 2.  Collect the primary doc (AGENTS override/default/fallback) from the
+//!     repository root down to the current working directory (inclusive), then
+//!     append any `general-prompt.md` files found in those directories.
 //! 3.  We do **not** walk past the Git root.
 
 use crate::config::Config;
@@ -25,6 +26,8 @@ use tracing::error;
 pub const DEFAULT_PROJECT_DOC_FILENAME: &str = "AGENTS.md";
 /// Preferred local override for project-level docs.
 pub const LOCAL_PROJECT_DOC_FILENAME: &str = "AGENTS.override.md";
+/// Optional local prompt appended to project docs when present.
+pub const GENERAL_PROMPT_FILENAME: &str = "general-prompt.md";
 
 /// When both `Config::instructions` and the project doc are present, they will
 /// be concatenated with the following separator.
@@ -127,7 +130,7 @@ pub async fn read_project_docs(config: &Config) -> std::io::Result<Option<String
     }
 }
 
-/// Discover the list of AGENTS.md files using the same search rules as
+/// Discover the list of project doc files using the same search rules as
 /// `read_project_docs`, but return the file paths instead of concatenated
 /// contents. The list is ordered from repository root to the current working
 /// directory (inclusive). Symlinks are allowed. When `project_doc_max_bytes`
@@ -180,6 +183,7 @@ pub fn discover_project_doc_paths(config: &Config) -> std::io::Result<Vec<PathBu
     let mut found: Vec<PathBuf> = Vec::new();
     let candidate_filenames = candidate_filenames(config);
     for d in search_dirs {
+        let mut primary: Option<PathBuf> = None;
         for name in &candidate_filenames {
             let candidate = d.join(name);
             match std::fs::symlink_metadata(&candidate) {
@@ -187,13 +191,31 @@ pub fn discover_project_doc_paths(config: &Config) -> std::io::Result<Vec<PathBu
                     let ft = md.file_type();
                     // Allow regular files and symlinks; opening will later fail for dangling links.
                     if ft.is_file() || ft.is_symlink() {
-                        found.push(candidate);
+                        primary = Some(candidate);
                         break;
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(e) => return Err(e),
             }
+        }
+
+        if let Some(primary) = primary {
+            found.push(primary);
+        }
+
+        let general_prompt = d.join(GENERAL_PROMPT_FILENAME);
+        match std::fs::symlink_metadata(&general_prompt) {
+            Ok(md) => {
+                let ft = md.file_type();
+                if ft.is_file() || ft.is_symlink() {
+                    if !found.last().is_some_and(|path| path == &general_prompt) {
+                        found.push(general_prompt);
+                    }
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
         }
     }
 
@@ -234,6 +256,7 @@ mod tests {
     use super::*;
     use crate::config::ConfigBuilder;
     use crate::skills::load_skills;
+    use pretty_assertions::assert_eq;
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -484,6 +507,31 @@ mod tests {
                 .unwrap()
                 .to_string_lossy()
                 .eq(DEFAULT_PROJECT_DOC_FILENAME)
+        );
+    }
+
+    #[tokio::test]
+    async fn appends_general_prompt_after_primary() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(tmp.path().join(DEFAULT_PROJECT_DOC_FILENAME), "primary").unwrap();
+        fs::write(tmp.path().join(GENERAL_PROMPT_FILENAME), "general").unwrap();
+
+        let cfg = make_config(&tmp, 4096, None).await;
+        let res = get_user_instructions(&cfg, None)
+            .await
+            .expect("combined doc expected");
+
+        assert_eq!(res, "primary\n\ngeneral");
+
+        let discovery = discover_project_doc_paths(&cfg).expect("discover paths");
+        assert_eq!(discovery.len(), 2);
+        assert_eq!(
+            discovery[0].file_name().unwrap().to_string_lossy(),
+            DEFAULT_PROJECT_DOC_FILENAME
+        );
+        assert_eq!(
+            discovery[1].file_name().unwrap().to_string_lossy(),
+            GENERAL_PROMPT_FILENAME
         );
     }
 

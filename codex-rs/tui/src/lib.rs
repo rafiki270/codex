@@ -3,6 +3,7 @@
 // alternate‑screen mode starts; that file opts‑out locally via `allow`.
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::disallowed_methods)]
+use crate::slash_command::slash_commands_disabled_by_env;
 use additional_dirs::add_dir_warning_message;
 use app::App;
 pub use app::AppExitInfo;
@@ -573,6 +574,9 @@ async fn load_config_or_exit(
 /// or if the current cwd project is already trusted. If not, we need to
 /// show the trust screen.
 fn should_show_trust_screen(config: &Config) -> bool {
+    if slash_commands_disabled_by_env() {
+        return false;
+    }
     if cfg!(target_os = "windows") && get_platform_sandbox().is_none() {
         // If the experimental sandbox is not enabled, Native Windows cannot enforce sandboxed write access; skip the trust prompt entirely.
         return false;
@@ -610,10 +614,38 @@ fn should_show_login_screen(login_status: LoginStatus, config: &Config) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::slash_command::DISABLE_SLASH_COMMANDS_ENV;
     use codex_core::config::ConfigBuilder;
     use codex_core::config::ProjectConfig;
     use serial_test::serial;
+    use std::ffi::OsString;
     use tempfile::TempDir;
+
+    struct EnvVarGuard {
+        key: &'static str,
+        original: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let original = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.original {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
 
     async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
         ConfigBuilder::default()
@@ -625,6 +657,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn windows_skips_trust_prompt_without_sandbox() -> std::io::Result<()> {
+        let _env_guard = EnvVarGuard::set(DISABLE_SLASH_COMMANDS_ENV, "0");
         let temp_dir = TempDir::new()?;
         let mut config = build_config(&temp_dir).await?;
         config.did_user_set_custom_approval_policy_or_sandbox_mode = false;
@@ -648,6 +681,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn windows_shows_trust_prompt_with_sandbox() -> std::io::Result<()> {
+        let _env_guard = EnvVarGuard::set(DISABLE_SLASH_COMMANDS_ENV, "0");
         let temp_dir = TempDir::new()?;
         let mut config = build_config(&temp_dir).await?;
         config.did_user_set_custom_approval_policy_or_sandbox_mode = false;
@@ -669,8 +703,10 @@ mod tests {
         Ok(())
     }
     #[tokio::test]
+    #[serial]
     async fn untrusted_project_skips_trust_prompt() -> std::io::Result<()> {
         use codex_protocol::config_types::TrustLevel;
+        let _env_guard = EnvVarGuard::set(DISABLE_SLASH_COMMANDS_ENV, "0");
         let temp_dir = TempDir::new()?;
         let mut config = build_config(&temp_dir).await?;
         config.did_user_set_custom_approval_policy_or_sandbox_mode = false;

@@ -50,29 +50,6 @@ pub async fn run_main(
     let (incoming_tx, mut incoming_rx) = mpsc::channel::<JSONRPCMessage>(CHANNEL_CAPACITY);
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<OutgoingMessage>(CHANNEL_CAPACITY);
 
-    // Task: read from stdin, push to `incoming_tx`.
-    let stdin_reader_handle = tokio::spawn({
-        async move {
-            let stdin = io::stdin();
-            let reader = BufReader::new(stdin);
-            let mut lines = reader.lines();
-
-            while let Some(line) = lines.next_line().await.unwrap_or_default() {
-                match serde_json::from_str::<JSONRPCMessage>(&line) {
-                    Ok(msg) => {
-                        if incoming_tx.send(msg).await.is_err() {
-                            // Receiver gone – nothing left to do.
-                            break;
-                        }
-                    }
-                    Err(e) => error!("Failed to deserialize JSONRPCMessage: {e}"),
-                }
-            }
-
-            debug!("stdin reader finished (EOF)");
-        }
-    });
-
     // Parse CLI overrides once and derive the base Config eagerly so later
     // components do not need to work with raw TOML values.
     let cli_kv_overrides = cli_config_overrides.parse_overrides().map_err(|e| {
@@ -92,7 +69,10 @@ pub async fn run_main(
         if trimmed.is_empty() {
             return Err(std::io::Error::other("--api-token must not be empty"));
         }
-        std::env::set_var(CODEX_API_KEY_ENV_VAR, trimmed);
+        // Safety: apply the override before spawning any Codex tasks.
+        unsafe {
+            std::env::set_var(CODEX_API_KEY_ENV_VAR, trimmed);
+        }
     }
     let enable_codex_api_key_env = cli_config_overrides.api_token.is_some();
 
@@ -129,6 +109,29 @@ pub async fn run_main(
         .with(otel_logger_layer)
         .with(otel_tracing_layer)
         .try_init();
+
+    // Task: read from stdin, push to `incoming_tx`.
+    let stdin_reader_handle = tokio::spawn({
+        async move {
+            let stdin = io::stdin();
+            let reader = BufReader::new(stdin);
+            let mut lines = reader.lines();
+
+            while let Some(line) = lines.next_line().await.unwrap_or_default() {
+                match serde_json::from_str::<JSONRPCMessage>(&line) {
+                    Ok(msg) => {
+                        if incoming_tx.send(msg).await.is_err() {
+                            // Receiver gone – nothing left to do.
+                            break;
+                        }
+                    }
+                    Err(e) => error!("Failed to deserialize JSONRPCMessage: {e}"),
+                }
+            }
+
+            debug!("stdin reader finished (EOF)");
+        }
+    });
 
     // Task: process incoming messages.
     let processor_handle = tokio::spawn({

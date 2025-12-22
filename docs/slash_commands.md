@@ -4,6 +4,8 @@
 
 Slash commands are special commands you can type that start with `/`.
 
+Note: Slash commands are disabled by default in this build. Set `CODEX_DISABLE_SLASH_COMMANDS=0` to enable them.
+
 ---
 
 ### Built-in slash commands
@@ -17,7 +19,7 @@ Control Codex’s behavior during an interactive session with slash commands.
 | `/review`       | review my current changes and find issues                                  |
 | `/new`          | start a new chat during a conversation                                     |
 | `/resume`       | resume an old chat                                                         |
-| `/init`         | create an AGENTS.md file with instructions for Codex                       |
+| `/init`         | create AGENTS.md and a blank general-prompt.md file                         |
 | `/compact`      | summarize conversation to prevent hitting the context limit                |
 | `/diff`         | show git diff (including untracked files)                                  |
 | `/mention`      | mention a file                                                             |

@@ -1,8 +1,11 @@
+use std::env;
 use strum::IntoEnumIterator;
 use strum_macros::AsRefStr;
 use strum_macros::EnumIter;
 use strum_macros::EnumString;
 use strum_macros::IntoStaticStr;
+
+pub const DISABLE_SLASH_COMMANDS_ENV: &str = "CODEX_DISABLE_SLASH_COMMANDS";
 
 /// Commands that can be invoked by starting a message with a leading slash.
 #[derive(
@@ -39,7 +42,7 @@ impl SlashCommand {
         match self {
             SlashCommand::Feedback => "send logs to maintainers",
             SlashCommand::New => "start a new chat during a conversation",
-            SlashCommand::Init => "create an AGENTS.md file with instructions for Codex",
+            SlashCommand::Init => "create AGENTS.md and a blank general-prompt.md file",
             SlashCommand::Compact => "summarize conversation to prevent hitting the context limit",
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Resume => "resume a saved chat",
@@ -97,8 +100,25 @@ impl SlashCommand {
     }
 }
 
+pub fn slash_commands_disabled_by_env() -> bool {
+    match env::var(DISABLE_SLASH_COMMANDS_ENV) {
+        Ok(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return false;
+            }
+            let lowered = trimmed.to_ascii_lowercase();
+            !matches!(lowered.as_str(), "0" | "false" | "no" | "off")
+        }
+        Err(_) => true,
+    }
+}
+
 pub fn slash_commands_enabled() -> bool {
-    cfg!(test)
+    if cfg!(test) {
+        return true;
+    }
+    !slash_commands_disabled_by_env()
 }
 
 /// Return all built-in commands in a Vec paired with their command string.

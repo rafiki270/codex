@@ -14,8 +14,9 @@ Codex uses [`AGENTS.md`](https://agents.md/) files to gather helpful guidance be
 When you work inside a project, Codex builds on those global instructions by collecting project docs:
 
 - The search starts at the repository root and continues down to your current directory. If a Git root is not found, only the current directory is checked.
-- In each directory along that path, Codex looks for `AGENTS.override.md` first, then `AGENTS.md`, and then any fallback names listed in your Codex configuration (see [`project_doc_fallback_filenames`](../docs/config.md#project_doc_fallback_filenames)). At most one file per directory is included.
-- Files are read in order from root to leaf and joined together with blank lines. Empty files are skipped, and very large files are truncated once the combined size reaches 32 KiB (the default [`project_doc_max_bytes`](../docs/config.md#project_doc_max_bytes) limit). If you need more space, split guidance across nested directories or raise the limit in your configuration.
+- In each directory along that path, Codex looks for `AGENTS.override.md` first, then `AGENTS.md`, and then any fallback names listed in your Codex configuration (see [`project_doc_fallback_filenames`](../docs/config.md#project_doc_fallback_filenames)). At most one primary file per directory is included.
+- If a `general-prompt.md` file exists in that directory, Codex appends it after the primary doc for that directory.
+- Files are read in order from root to leaf and joined together with blank lines. Empty files are skipped, and very large files are truncated once the combined size reaches 32 KiB (the default [`project_doc_max_bytes`](../docs/config.md#project_doc_max_bytes) limit). If you need more space, split guidance across nested directories or raise the limit in your configuration.
 
 ## How They Come Together
 
@@ -25,8 +26,9 @@ Before Codex gets to work, the instructions are ingested in precedence order: gl
 
 1. Global `AGENTS.override.md` (if present), otherwise global `AGENTS.md`.
 2. For each directory from the repository root to your working directory: `AGENTS.override.md`, then `AGENTS.md`, then configured fallback names.
+3. For each directory from the repository root to your working directory: `general-prompt.md` if present.
 
-Only these filenames are considered. To use a different name, add it to the fallback list in your Codex configuration or rename the file accordingly.
+Only these filenames are considered. To use a different primary name, add it to the fallback list in your Codex configuration or rename the file accordingly.
 
 ## Fallback Filenames
 
@@ -39,7 +41,7 @@ Example: suppose your configuration lists `["TEAM_GUIDE.md", ".agents.md"]`. Ins
 3. `TEAM_GUIDE.md`
 4. `.agents.md`
 
-If the repository root contains `TEAM_GUIDE.md` and the `backend/` directory contains `AGENTS.override.md`, the overall instructions will combine the root `TEAM_GUIDE.md` (because no override or default file was present there) with the `backend/AGENTS.override.md` file (which takes precedence over the fallback names).
+If the repository root contains `TEAM_GUIDE.md` and the `backend/` directory contains `AGENTS.override.md`, the overall instructions will combine the root `TEAM_GUIDE.md` (because no override or default file was present there) with the `backend/AGENTS.override.md` file (which takes precedence over the fallback names). Any `general-prompt.md` files found in those directories would be appended after the primary doc at each level.
 
 You can configure those fallbacks in `~/.codex/config.toml` (or another profile) like this:
 

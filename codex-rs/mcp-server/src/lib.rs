@@ -59,6 +59,32 @@ pub async fn run_main(
     let (incoming_tx, mut incoming_rx) = mpsc::channel::<JSONRPCMessage>(CHANNEL_CAPACITY);
     let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
 
+    // Parse CLI overrides once and derive the base Config eagerly so later
+    // components do not need to work with raw TOML values.
+    let cli_kv_overrides = cli_config_overrides.parse_overrides().map_err(|e| {
+        std::io::Error::new(
+            ErrorKind::InvalidInput,
+            format!("error parsing -c overrides: {e}"),
+        )
+    })?;
+    let config = Config::load_with_cli_overrides(cli_kv_overrides)
+        .await
+        .map_err(|e| {
+            std::io::Error::new(ErrorKind::InvalidData, format!("error loading config: {e}"))
+        })?;
+
+    if let Some(token) = cli_config_overrides.api_token.as_deref() {
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
+            return Err(std::io::Error::other("--api-token must not be empty"));
+        }
+        // Safety: apply the override before spawning any Codex tasks.
+        unsafe {
+            std::env::set_var(CODEX_API_KEY_ENV_VAR, trimmed);
+        }
+    }
+    let enable_codex_api_key_env = cli_config_overrides.api_token.is_some();
+
     // Task: read from stdin, push to `incoming_tx`.
     let stdin_reader_handle = tokio::spawn({
         async move {
@@ -81,29 +107,6 @@ pub async fn run_main(
             debug!("stdin reader finished (EOF)");
         }
     });
-
-    // Parse CLI overrides once and derive the base Config eagerly so later
-    // components do not need to work with raw TOML values.
-    let cli_kv_overrides = cli_config_overrides.parse_overrides().map_err(|e| {
-        std::io::Error::new(
-            ErrorKind::InvalidInput,
-            format!("error parsing -c overrides: {e}"),
-        )
-    })?;
-    let config = Config::load_with_cli_overrides(cli_kv_overrides)
-        .await
-        .map_err(|e| {
-            std::io::Error::new(ErrorKind::InvalidData, format!("error loading config: {e}"))
-        })?;
-
-    if let Some(token) = cli_config_overrides.api_token.as_deref() {
-        let trimmed = token.trim();
-        if trimmed.is_empty() {
-            return Err(std::io::Error::other("--api-token must not be empty"));
-        }
-        std::env::set_var(CODEX_API_KEY_ENV_VAR, trimmed);
-    }
-    let enable_codex_api_key_env = cli_config_overrides.api_token.is_some();
 
     // Task: process incoming messages.
     let processor_handle = tokio::spawn({
