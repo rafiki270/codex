@@ -179,6 +179,8 @@ pub struct CodexSpawnOk {
 
 pub(crate) const INITIAL_SUBMIT_ID: &str = "";
 pub(crate) const SUBMISSION_CHANNEL_CAPACITY: usize = 64;
+const FIXED_MODEL_SLUG: &str = "gpt-5.2-codex";
+const FIXED_REASONING_EFFORT: ReasoningEffortConfig = ReasoningEffortConfig::Medium;
 static CHAT_WIRE_API_DEPRECATION_EMITTED: AtomicBool = AtomicBool::new(false);
 
 fn maybe_push_chat_wire_api_deprecation(
@@ -252,14 +254,15 @@ impl Codex {
         {
             error!("failed to refresh available models: {err:?}");
         }
-        let model = models_manager.get_model(&config.model, &config).await;
+        let model = FIXED_MODEL_SLUG.to_string();
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
             model: model.clone(),
-            model_reasoning_effort: config.model_reasoning_effort,
+            model_reasoning_effort: Some(FIXED_REASONING_EFFORT),
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
             user_instructions,
+            system_instructions: config.system_instructions.clone(),
             base_instructions: config.base_instructions.clone(),
             compact_prompt: config.compact_prompt.clone(),
             approval_policy: config.approval_policy.clone(),
@@ -363,6 +366,7 @@ pub(crate) struct TurnContext {
     pub(crate) base_instructions: Option<String>,
     pub(crate) compact_prompt: Option<String>,
     pub(crate) user_instructions: Option<String>,
+    pub(crate) system_instructions: Option<String>,
     pub(crate) approval_policy: AskForApproval,
     pub(crate) sandbox_policy: SandboxPolicy,
     pub(crate) shell_environment_policy: ShellEnvironmentPolicy,
@@ -406,6 +410,9 @@ pub(crate) struct SessionConfiguration {
     /// Model instructions that are appended to the base instructions.
     user_instructions: Option<String>,
 
+    /// System instructions appended to the base prompt.
+    system_instructions: Option<String>,
+
     /// Base instructions override.
     base_instructions: Option<String>,
 
@@ -438,12 +445,8 @@ pub(crate) struct SessionConfiguration {
 impl SessionConfiguration {
     pub(crate) fn apply(&self, updates: &SessionSettingsUpdate) -> ConstraintResult<Self> {
         let mut next_configuration = self.clone();
-        if let Some(model) = updates.model.clone() {
-            next_configuration.model = model;
-        }
-        if let Some(effort) = updates.reasoning_effort {
-            next_configuration.model_reasoning_effort = effort;
-        }
+        let _ = &updates.model;
+        let _ = &updates.reasoning_effort;
         if let Some(summary) = updates.reasoning_summary {
             next_configuration.model_reasoning_summary = summary;
         }
@@ -456,6 +459,8 @@ impl SessionConfiguration {
         if let Some(cwd) = updates.cwd.clone() {
             next_configuration.cwd = cwd;
         }
+        next_configuration.model = FIXED_MODEL_SLUG.to_string();
+        next_configuration.model_reasoning_effort = Some(FIXED_REASONING_EFFORT);
         Ok(next_configuration)
     }
 }
@@ -525,6 +530,7 @@ impl Session {
             base_instructions: session_configuration.base_instructions.clone(),
             compact_prompt: session_configuration.compact_prompt.clone(),
             user_instructions: session_configuration.user_instructions.clone(),
+            system_instructions: session_configuration.system_instructions.clone(),
             approval_policy: session_configuration.approval_policy.value(),
             sandbox_policy: session_configuration.sandbox_policy.get().clone(),
             shell_environment_policy: per_turn_config.shell_environment_policy.clone(),
@@ -2145,6 +2151,7 @@ async fn spawn_review_thread(
         ghost_snapshot: parent_turn_context.ghost_snapshot.clone(),
         developer_instructions: None,
         user_instructions: None,
+        system_instructions: parent_turn_context.system_instructions.clone(),
         base_instructions: Some(base_instructions.clone()),
         compact_prompt: parent_turn_context.compact_prompt.clone(),
         approval_policy: parent_turn_context.approval_policy,
@@ -2406,6 +2413,7 @@ async fn run_turn(
         tools: router.specs(),
         parallel_tool_calls: model_supports_parallel && sess.enabled(Feature::ParallelToolCalls),
         base_instructions_override: turn_context.base_instructions.clone(),
+        system_instructions: turn_context.system_instructions.clone(),
         output_schema: turn_context.final_output_json_schema.clone(),
     };
 
@@ -2836,6 +2844,7 @@ mod tests {
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
             user_instructions: config.user_instructions.clone(),
+            system_instructions: config.system_instructions.clone(),
             base_instructions: config.base_instructions.clone(),
             compact_prompt: config.compact_prompt.clone(),
             approval_policy: config.approval_policy.clone(),
@@ -2903,6 +2912,7 @@ mod tests {
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
             user_instructions: config.user_instructions.clone(),
+            system_instructions: config.system_instructions.clone(),
             base_instructions: config.base_instructions.clone(),
             compact_prompt: config.compact_prompt.clone(),
             approval_policy: config.approval_policy.clone(),
@@ -3110,6 +3120,7 @@ mod tests {
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
             user_instructions: config.user_instructions.clone(),
+            system_instructions: config.system_instructions.clone(),
             base_instructions: config.base_instructions.clone(),
             compact_prompt: config.compact_prompt.clone(),
             approval_policy: config.approval_policy.clone(),
@@ -3196,6 +3207,7 @@ mod tests {
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
             user_instructions: config.user_instructions.clone(),
+            system_instructions: config.system_instructions.clone(),
             base_instructions: config.base_instructions.clone(),
             compact_prompt: config.compact_prompt.clone(),
             approval_policy: config.approval_policy.clone(),

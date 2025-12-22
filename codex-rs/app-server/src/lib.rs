@@ -1,6 +1,7 @@
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
 use codex_common::CliConfigOverrides;
+use codex_core::auth::CODEX_API_KEY_ENV_VAR;
 use codex_core::config::Config;
 use std::io::ErrorKind;
 use std::io::Result as IoResult;
@@ -86,6 +87,15 @@ pub async fn run_main(
             std::io::Error::new(ErrorKind::InvalidData, format!("error loading config: {e}"))
         })?;
 
+    if let Some(token) = cli_config_overrides.api_token.as_deref() {
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
+            return Err(std::io::Error::other("--api-token must not be empty"));
+        }
+        std::env::set_var(CODEX_API_KEY_ENV_VAR, trimmed);
+    }
+    let enable_codex_api_key_env = cli_config_overrides.api_token.is_some();
+
     let feedback = CodexFeedback::new();
 
     let otel =
@@ -129,6 +139,7 @@ pub async fn run_main(
             codex_linux_sandbox_exe,
             std::sync::Arc::new(config),
             cli_overrides,
+            enable_codex_api_key_env,
             feedback.clone(),
         );
         async move {

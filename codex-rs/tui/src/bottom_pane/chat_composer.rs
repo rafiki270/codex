@@ -42,6 +42,7 @@ use crate::render::RectExt;
 use crate::render::renderable::Renderable;
 use crate::slash_command::SlashCommand;
 use crate::slash_command::built_in_slash_commands;
+use crate::slash_command::slash_commands_enabled;
 use crate::style::user_message_style;
 use codex_common::fuzzy_match::fuzzy_match;
 use codex_protocol::custom_prompts::CustomPrompt;
@@ -1617,6 +1618,9 @@ impl ChatComposer {
     /// prefix for any known command (built-in or custom prompt).
     /// Empty names only count when there is no extra content after the '/'.
     fn looks_like_slash_prefix(&self, name: &str, rest_after_name: &str) -> bool {
+        if !slash_commands_enabled() {
+            return false;
+        }
         if name.is_empty() {
             return rest_after_name.is_empty();
         }
@@ -1639,6 +1643,12 @@ impl ChatComposer {
     /// textarea. This must be called after every modification that can change
     /// the text so the popup is shown/updated/hidden as appropriate.
     fn sync_command_popup(&mut self, allow: bool) {
+        if !slash_commands_enabled() {
+            if matches!(self.active_popup, ActivePopup::Command(_)) {
+                self.active_popup = ActivePopup::None;
+            }
+            return;
+        }
         if !allow {
             if matches!(self.active_popup, ActivePopup::Command(_)) {
                 self.active_popup = ActivePopup::None;

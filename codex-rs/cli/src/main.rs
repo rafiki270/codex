@@ -36,6 +36,7 @@ mod wsl_paths;
 
 use crate::mcp_cmd::McpCli;
 
+use codex_core::auth::CODEX_API_KEY_ENV_VAR;
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
 use codex_core::config::find_codex_home;
@@ -441,6 +442,17 @@ async fn cli_main(codex_linux_sandbox_exe: Option<PathBuf>) -> anyhow::Result<()
         subcommand,
     } = MultitoolCli::parse();
 
+    if let Some(token) = root_config_overrides.api_token.as_deref() {
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
+            return Err(anyhow::anyhow!("--api-token must not be empty"));
+        }
+        // Safety: apply the override before spawning any Codex tasks.
+        unsafe {
+            std::env::set_var(CODEX_API_KEY_ENV_VAR, trimmed);
+        }
+    }
+
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
     root_config_overrides.raw_overrides.extend(toggle_overrides);
@@ -659,6 +671,12 @@ fn prepend_config_flags(
     subcommand_config_overrides
         .raw_overrides
         .splice(0..0, cli_config_overrides.raw_overrides);
+    if subcommand_config_overrides.system_prompt_file.is_none() {
+        subcommand_config_overrides.system_prompt_file = cli_config_overrides.system_prompt_file;
+    }
+    if subcommand_config_overrides.api_token.is_none() {
+        subcommand_config_overrides.api_token = cli_config_overrides.api_token;
+    }
 }
 
 /// Run the interactive Codex TUI, dispatching to either the legacy implementation or the
@@ -682,7 +700,11 @@ async fn run_interactive_tui(
 /// TUI frontend to launch. The full configuration is still loaded later by the interactive TUI.
 async fn is_tui2_enabled(cli: &TuiCli) -> std::io::Result<bool> {
     let raw_overrides = cli.config_overrides.raw_overrides.clone();
-    let overrides_cli = codex_common::CliConfigOverrides { raw_overrides };
+    let overrides_cli = codex_common::CliConfigOverrides {
+        raw_overrides,
+        system_prompt_file: cli.config_overrides.system_prompt_file.clone(),
+        api_token: cli.config_overrides.api_token.clone(),
+    };
     let cli_kv_overrides = overrides_cli
         .parse_overrides()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
@@ -772,6 +794,10 @@ fn merge_resume_cli_flags(interactive: &mut TuiCli, resume_cli: TuiCli) {
         .config_overrides
         .raw_overrides
         .extend(resume_cli.config_overrides.raw_overrides);
+    if resume_cli.config_overrides.system_prompt_file.is_some() {
+        interactive.config_overrides.system_prompt_file =
+            resume_cli.config_overrides.system_prompt_file;
+    }
 }
 
 fn print_completion(cmd: CompletionCommand) {

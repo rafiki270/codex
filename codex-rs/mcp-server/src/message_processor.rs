@@ -51,11 +51,12 @@ impl MessageProcessor {
         outgoing: OutgoingMessageSender,
         codex_linux_sandbox_exe: Option<PathBuf>,
         config: Arc<Config>,
+        enable_codex_api_key_env: bool,
     ) -> Self {
         let outgoing = Arc::new(outgoing);
         let auth_manager = AuthManager::shared(
             config.codex_home.clone(),
-            false,
+            enable_codex_api_key_env,
             config.cli_auth_credentials_store_mode,
         );
         let conversation_manager =

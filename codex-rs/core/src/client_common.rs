@@ -39,6 +39,9 @@ pub struct Prompt {
     /// Optional override for the built-in BASE_INSTRUCTIONS.
     pub base_instructions_override: Option<String>,
 
+    /// Optional system instructions appended to the base prompt.
+    pub system_instructions: Option<String>,
+
     /// Optional the output schema for the model's response.
     pub output_schema: Option<Value>,
 }
@@ -58,13 +61,25 @@ impl Prompt {
             ToolSpec::Freeform(f) => f.name == "apply_patch",
             _ => false,
         });
-        if self.base_instructions_override.is_none()
+        let instructions = if self.base_instructions_override.is_none()
             && model.needs_special_apply_patch_instructions
             && !is_apply_patch_tool_present
         {
             Cow::Owned(format!("{base}\n{APPLY_PATCH_TOOL_INSTRUCTIONS}"))
         } else {
             Cow::Borrowed(base)
+        };
+
+        match self.system_instructions.as_deref() {
+            Some(system_instructions) if !system_instructions.is_empty() => match instructions {
+                Cow::Borrowed(base) => Cow::Owned(format!("{base}\n\n{system_instructions}")),
+                Cow::Owned(mut base) => {
+                    base.push_str("\n\n");
+                    base.push_str(system_instructions);
+                    Cow::Owned(base)
+                }
+            },
+            _ => instructions,
         }
     }
 
@@ -327,6 +342,24 @@ mod tests {
             let full = prompt.get_full_instructions(&model_family);
             assert_eq!(full, expected);
         }
+    }
+
+    #[test]
+    fn get_full_instructions_appends_system_instructions() {
+        let prompt = Prompt {
+            system_instructions: Some("bible".to_string()),
+            ..Default::default()
+        };
+        let config = test_config();
+        let model_family = ModelsManager::construct_model_family_offline("gpt-4o", &config);
+        let expected = format!(
+            "{}\n{}\n\nbible",
+            model_family.clone().base_instructions,
+            APPLY_PATCH_TOOL_INSTRUCTIONS
+        );
+
+        let full = prompt.get_full_instructions(&model_family);
+        assert_eq!(full, expected);
     }
 
     #[test]

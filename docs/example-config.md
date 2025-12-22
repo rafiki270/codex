@@ -59,7 +59,7 @@ model_reasoning_summary_format = "none"
 # Additional user instructions inject before AGENTS.md. Default: unset.
 # developer_instructions = ""
 
-# (Ignored) Optional legacy base instructions override (prefer AGENTS.md). Default: unset.
+# Additional system instructions appended to the base prompt. Default: unset.
 # instructions = ""
 
 # Inline override for the history compaction prompt. Default: unset.

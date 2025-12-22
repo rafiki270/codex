@@ -5,7 +5,6 @@ use crate::exec_cell::OutputLinesParams;
 use crate::exec_cell::TOOL_CALL_MAX_LINES;
 use crate::exec_cell::output_lines;
 use crate::exec_cell::spinner;
-use crate::exec_command::relativize_to_home;
 use crate::exec_command::strip_bash_lc_and_escape;
 use crate::markdown::append_markdown;
 use crate::render::line_utils::line_to_static;
@@ -15,7 +14,6 @@ use crate::render::renderable::Renderable;
 use crate::style::user_message_style;
 use crate::text_formatting::format_and_truncate_tool_result;
 use crate::text_formatting::truncate_text;
-use crate::tooltips;
 use crate::ui_consts::LIVE_PREFIX_COLS;
 use crate::update_action::UpdateAction;
 use crate::version::CODEX_CLI_VERSION;
@@ -30,7 +28,6 @@ use codex_core::protocol::FileChange;
 use codex_core::protocol::McpAuthStatus;
 use codex_core::protocol::McpInvocation;
 use codex_core::protocol::SessionConfiguredEvent;
-use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::openai_models::ReasoningSummaryFormat;
 use codex_protocol::plan_tool::PlanItemArg;
 use codex_protocol::plan_tool::StepStatus;
@@ -497,21 +494,6 @@ impl HistoryCell for CompletedMcpToolCallWithImageOutput {
     }
 }
 
-pub(crate) const SESSION_HEADER_MAX_INNER_WIDTH: usize = 56; // Just an eyeballed value
-
-pub(crate) fn card_inner_width(width: u16, max_inner_width: usize) -> Option<usize> {
-    if width < 4 {
-        return None;
-    }
-    let inner_width = std::cmp::min(width.saturating_sub(4) as usize, max_inner_width);
-    Some(inner_width)
-}
-
-/// Render `lines` inside a border sized to the widest span in the content.
-pub(crate) fn with_border(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
-    with_border_internal(lines, None)
-}
-
 /// Render `lines` inside a border whose inner width is at least `inner_width`.
 ///
 /// This is useful when callers have already clamped their content to a
@@ -574,35 +556,6 @@ pub(crate) fn padded_emoji(emoji: &str) -> String {
 }
 
 #[derive(Debug)]
-struct TooltipHistoryCell {
-    tip: &'static str,
-}
-
-impl TooltipHistoryCell {
-    fn new(tip: &'static str) -> Self {
-        Self { tip }
-    }
-}
-
-impl HistoryCell for TooltipHistoryCell {
-    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let indent = "  ";
-        let indent_width = UnicodeWidthStr::width(indent);
-        let wrap_width = usize::from(width.max(1))
-            .saturating_sub(indent_width)
-            .max(1);
-        let mut lines: Vec<Line<'static>> = Vec::new();
-        append_markdown(
-            &format!("**Tip:** {}", self.tip),
-            Some(wrap_width),
-            &mut lines,
-        );
-
-        prefix_lines(lines, indent.into(), indent.into())
-    }
-}
-
-#[derive(Debug)]
 pub struct SessionInfoCell(CompositeHistoryCell);
 
 impl HistoryCell for SessionInfoCell {
@@ -620,74 +573,27 @@ impl HistoryCell for SessionInfoCell {
 }
 
 pub(crate) fn new_session_info(
-    config: &Config,
+    _config: &Config,
     requested_model: &str,
     event: SessionConfiguredEvent,
     is_first_event: bool,
 ) -> SessionInfoCell {
-    let SessionConfiguredEvent {
-        model,
-        reasoning_effort,
-        ..
-    } = event;
-    // Header box rendered as history (so it appears at the very top)
-    let header = SessionHeaderHistoryCell::new(
-        model.clone(),
-        reasoning_effort,
-        config.cwd.clone(),
-        CODEX_CLI_VERSION,
-    );
-    let mut parts: Vec<Box<dyn HistoryCell>> = vec![Box::new(header)];
+    let SessionConfiguredEvent { model, .. } = event;
+    let mut parts: Vec<Box<dyn HistoryCell>> = Vec::new();
 
     if is_first_event {
-        // Help lines below the header (new copy and list)
-        let help_lines: Vec<Line<'static>> = vec![
-            "  To get started, describe a task or try one of these commands:"
-                .dim()
-                .into(),
-            Line::from(""),
-            Line::from(vec![
-                "  ".into(),
-                "/init".into(),
-                " - create an AGENTS.md file with instructions for Codex".dim(),
-            ]),
-            Line::from(vec![
-                "  ".into(),
-                "/status".into(),
-                " - show current session configuration".dim(),
-            ]),
-            Line::from(vec![
-                "  ".into(),
-                "/approvals".into(),
-                " - choose what Codex can do without approval".dim(),
-            ]),
-            Line::from(vec![
-                "  ".into(),
-                "/model".into(),
-                " - choose what model and reasoning effort to use".dim(),
-            ]),
-            Line::from(vec![
-                "  ".into(),
-                "/review".into(),
-                " - review any changes and find issues".dim(),
-            ]),
-        ];
+        // Help lines for first-time sessions.
+        let help_lines: Vec<Line<'static>> =
+            vec!["  To get started, describe a task.".dim().into()];
 
         parts.push(Box::new(PlainHistoryCell { lines: help_lines }));
-    } else {
-        if config.show_tooltips
-            && let Some(tooltips) = tooltips::random_tooltip().map(TooltipHistoryCell::new)
-        {
-            parts.push(Box::new(tooltips));
-        }
-        if requested_model != model {
-            let lines = vec![
-                "model changed:".magenta().bold().into(),
-                format!("requested: {requested_model}").into(),
-                format!("used: {model}").into(),
-            ];
-            parts.push(Box::new(PlainHistoryCell { lines }));
-        }
+    } else if requested_model != model {
+        let lines = vec![
+            "model changed:".magenta().bold().into(),
+            format!("requested: {requested_model}").into(),
+            format!("used: {model}").into(),
+        ];
+        parts.push(Box::new(PlainHistoryCell { lines }));
     }
 
     SessionInfoCell(CompositeHistoryCell { parts })
@@ -695,124 +601,6 @@ pub(crate) fn new_session_info(
 
 pub(crate) fn new_user_prompt(message: String) -> UserHistoryCell {
     UserHistoryCell { message }
-}
-
-#[derive(Debug)]
-struct SessionHeaderHistoryCell {
-    version: &'static str,
-    model: String,
-    reasoning_effort: Option<ReasoningEffortConfig>,
-    directory: PathBuf,
-}
-
-impl SessionHeaderHistoryCell {
-    fn new(
-        model: String,
-        reasoning_effort: Option<ReasoningEffortConfig>,
-        directory: PathBuf,
-        version: &'static str,
-    ) -> Self {
-        Self {
-            version,
-            model,
-            reasoning_effort,
-            directory,
-        }
-    }
-
-    fn format_directory(&self, max_width: Option<usize>) -> String {
-        Self::format_directory_inner(&self.directory, max_width)
-    }
-
-    fn format_directory_inner(directory: &Path, max_width: Option<usize>) -> String {
-        let formatted = if let Some(rel) = relativize_to_home(directory) {
-            if rel.as_os_str().is_empty() {
-                "~".to_string()
-            } else {
-                format!("~{}{}", std::path::MAIN_SEPARATOR, rel.display())
-            }
-        } else {
-            directory.display().to_string()
-        };
-
-        if let Some(max_width) = max_width {
-            if max_width == 0 {
-                return String::new();
-            }
-            if UnicodeWidthStr::width(formatted.as_str()) > max_width {
-                return crate::text_formatting::center_truncate_path(&formatted, max_width);
-            }
-        }
-
-        formatted
-    }
-
-    fn reasoning_label(&self) -> Option<&'static str> {
-        self.reasoning_effort.map(|effort| match effort {
-            ReasoningEffortConfig::Minimal => "minimal",
-            ReasoningEffortConfig::Low => "low",
-            ReasoningEffortConfig::Medium => "medium",
-            ReasoningEffortConfig::High => "high",
-            ReasoningEffortConfig::XHigh => "xhigh",
-            ReasoningEffortConfig::None => "none",
-        })
-    }
-}
-
-impl HistoryCell for SessionHeaderHistoryCell {
-    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let Some(inner_width) = card_inner_width(width, SESSION_HEADER_MAX_INNER_WIDTH) else {
-            return Vec::new();
-        };
-
-        let make_row = |spans: Vec<Span<'static>>| Line::from(spans);
-
-        // Title line rendered inside the box: ">_ OpenAI Codex (vX)"
-        let title_spans: Vec<Span<'static>> = vec![
-            Span::from(">_ ").dim(),
-            Span::from("OpenAI Codex").bold(),
-            Span::from(" ").dim(),
-            Span::from(format!("(v{})", self.version)).dim(),
-        ];
-
-        const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
-        const CHANGE_MODEL_HINT_EXPLANATION: &str = " to change";
-        const DIR_LABEL: &str = "directory:";
-        let label_width = DIR_LABEL.len();
-        let model_label = format!(
-            "{model_label:<label_width$}",
-            model_label = "model:",
-            label_width = label_width
-        );
-        let reasoning_label = self.reasoning_label();
-        let mut model_spans: Vec<Span<'static>> = vec![
-            Span::from(format!("{model_label} ")).dim(),
-            Span::from(self.model.clone()),
-        ];
-        if let Some(reasoning) = reasoning_label {
-            model_spans.push(Span::from(" "));
-            model_spans.push(Span::from(reasoning));
-        }
-        model_spans.push("   ".dim());
-        model_spans.push(CHANGE_MODEL_HINT_COMMAND.cyan());
-        model_spans.push(CHANGE_MODEL_HINT_EXPLANATION.dim());
-
-        let dir_label = format!("{DIR_LABEL:<label_width$}");
-        let dir_prefix = format!("{dir_label} ");
-        let dir_prefix_width = UnicodeWidthStr::width(dir_prefix.as_str());
-        let dir_max_width = inner_width.saturating_sub(dir_prefix_width);
-        let dir = self.format_directory(Some(dir_max_width));
-        let dir_spans = vec![Span::from(dir_prefix).dim(), Span::from(dir)];
-
-        let lines = vec![
-            make_row(title_spans),
-            make_row(Vec::new()),
-            make_row(model_spans),
-            make_row(dir_spans),
-        ];
-
-        with_border(lines)
-    }
 }
 
 #[derive(Debug)]
@@ -1520,7 +1308,6 @@ mod tests {
     use codex_core::models_manager::manager::ModelsManager;
     use codex_core::protocol::McpAuthStatus;
     use codex_protocol::parse_command::ParsedCommand;
-    use dirs::home_dir;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::collections::HashMap;
@@ -1899,49 +1686,6 @@ mod tests {
         let rendered = render_lines(&cell.display_lines(120)).join("\n");
 
         insta::assert_snapshot!(rendered);
-    }
-
-    #[test]
-    fn session_header_includes_reasoning_level_when_present() {
-        let cell = SessionHeaderHistoryCell::new(
-            "gpt-4o".to_string(),
-            Some(ReasoningEffortConfig::High),
-            std::env::temp_dir(),
-            "test",
-        );
-
-        let lines = render_lines(&cell.display_lines(80));
-        let model_line = lines
-            .into_iter()
-            .find(|line| line.contains("model:"))
-            .expect("model line");
-
-        assert!(model_line.contains("gpt-4o high"));
-        assert!(model_line.contains("/model to change"));
-    }
-
-    #[test]
-    fn session_header_directory_center_truncates() {
-        let mut dir = home_dir().expect("home directory");
-        for part in ["hello", "the", "fox", "is", "very", "fast"] {
-            dir.push(part);
-        }
-
-        let formatted = SessionHeaderHistoryCell::format_directory_inner(&dir, Some(24));
-        let sep = std::path::MAIN_SEPARATOR;
-        let expected = format!("~{sep}hello{sep}the{sep}…{sep}very{sep}fast");
-        assert_eq!(formatted, expected);
-    }
-
-    #[test]
-    fn session_header_directory_front_truncates_long_segment() {
-        let mut dir = home_dir().expect("home directory");
-        dir.push("supercalifragilisticexpialidocious");
-
-        let formatted = SessionHeaderHistoryCell::format_directory_inner(&dir, Some(18));
-        let sep = std::path::MAIN_SEPARATOR;
-        let expected = format!("~{sep}…cexpialidocious");
-        assert_eq!(formatted, expected);
     }
 
     #[test]

@@ -138,6 +138,9 @@ pub struct Config {
     /// User-provided instructions from AGENTS.md.
     pub user_instructions: Option<String>,
 
+    /// System instructions appended to the base prompt.
+    pub system_instructions: Option<String>,
+
     /// Base instructions override.
     pub base_instructions: Option<String>,
 
@@ -1261,6 +1264,14 @@ impl Config {
                 Some(trimmed.to_string())
             }
         });
+        let system_instructions = cfg.instructions.and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
 
         // Load base instructions override from a file if specified. If the
         // path is relative, resolve it against the effective cwd so the
@@ -1322,6 +1333,7 @@ impl Config {
             shell_environment_policy,
             notify: cfg.notify,
             user_instructions,
+            system_instructions,
             base_instructions,
             developer_instructions,
             compact_prompt,
@@ -3157,6 +3169,7 @@ model_verbosity = "high"
                 forced_auto_mode_downgraded_on_windows: false,
                 shell_environment_policy: ShellEnvironmentPolicy::default(),
                 user_instructions: None,
+                system_instructions: None,
                 notify: None,
                 cwd: fixture.cwd(),
                 cli_auth_credentials_store_mode: Default::default(),
@@ -3240,6 +3253,7 @@ model_verbosity = "high"
             forced_auto_mode_downgraded_on_windows: false,
             shell_environment_policy: ShellEnvironmentPolicy::default(),
             user_instructions: None,
+            system_instructions: None,
             notify: None,
             cwd: fixture.cwd(),
             cli_auth_credentials_store_mode: Default::default(),
@@ -3338,6 +3352,7 @@ model_verbosity = "high"
             forced_auto_mode_downgraded_on_windows: false,
             shell_environment_policy: ShellEnvironmentPolicy::default(),
             user_instructions: None,
+            system_instructions: None,
             notify: None,
             cwd: fixture.cwd(),
             cli_auth_credentials_store_mode: Default::default(),
@@ -3422,6 +3437,7 @@ model_verbosity = "high"
             forced_auto_mode_downgraded_on_windows: false,
             shell_environment_policy: ShellEnvironmentPolicy::default(),
             user_instructions: None,
+            system_instructions: None,
             notify: None,
             cwd: fixture.cwd(),
             cli_auth_credentials_store_mode: Default::default(),

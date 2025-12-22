@@ -6,6 +6,7 @@ use std::io::Result as IoResult;
 use std::path::PathBuf;
 
 use codex_common::CliConfigOverrides;
+use codex_core::auth::CODEX_API_KEY_ENV_VAR;
 use codex_core::config::Config;
 
 use mcp_types::JSONRPCMessage;
@@ -95,6 +96,15 @@ pub async fn run_main(
             std::io::Error::new(ErrorKind::InvalidData, format!("error loading config: {e}"))
         })?;
 
+    if let Some(token) = cli_config_overrides.api_token.as_deref() {
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
+            return Err(std::io::Error::other("--api-token must not be empty"));
+        }
+        std::env::set_var(CODEX_API_KEY_ENV_VAR, trimmed);
+    }
+    let enable_codex_api_key_env = cli_config_overrides.api_token.is_some();
+
     // Task: process incoming messages.
     let processor_handle = tokio::spawn({
         let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
@@ -102,6 +112,7 @@ pub async fn run_main(
             outgoing_message_sender,
             codex_linux_sandbox_exe,
             std::sync::Arc::new(config),
+            enable_codex_api_key_env,
         );
         async move {
             while let Some(msg) = incoming_rx.recv().await {

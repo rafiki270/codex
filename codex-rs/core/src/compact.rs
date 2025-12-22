@@ -93,6 +93,7 @@ async fn run_compact_task_inner(
         let turn_input = history.get_history_for_prompt();
         let prompt = Prompt {
             input: turn_input.clone(),
+            system_instructions: turn_context.system_instructions.clone(),
             ..Default::default()
         };
         let attempt_result = drain_to_completed(&sess, turn_context.as_ref(), &prompt).await;

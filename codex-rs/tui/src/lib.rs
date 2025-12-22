@@ -75,7 +75,6 @@ mod streaming;
 mod style;
 mod terminal_palette;
 mod text_formatting;
-mod tooltips;
 mod tui;
 mod ui_consts;
 pub mod update_action;
@@ -132,7 +131,11 @@ pub async fn run_main(
     // gpt-oss:20b) and ensure it is present locally. Also, force the built‑in
     let raw_overrides = cli.config_overrides.raw_overrides.clone();
     // `oss` model provider.
-    let overrides_cli = codex_common::CliConfigOverrides { raw_overrides };
+    let overrides_cli = codex_common::CliConfigOverrides {
+        raw_overrides,
+        system_prompt_file: cli.config_overrides.system_prompt_file.clone(),
+        api_token: cli.config_overrides.api_token.clone(),
+    };
     let cli_kv_overrides = match overrides_cli.parse_overrides() {
         // Parse `-c` overrides from the CLI.
         Ok(v) => v,
@@ -382,9 +385,10 @@ async fn run_ratatui_app(
     // Initialize high-fidelity session event logging if enabled.
     session_log::maybe_init(&initial_config);
 
+    let enable_codex_api_key_env = cli.config_overrides.api_token.is_some();
     let auth_manager = AuthManager::shared(
         initial_config.codex_home.clone(),
-        false,
+        enable_codex_api_key_env,
         initial_config.cli_auth_credentials_store_mode,
     );
     let login_status = get_login_status(&initial_config);

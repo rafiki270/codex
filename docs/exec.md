@@ -105,10 +105,14 @@ codex exec --model gpt-5.1 --json resume --last "Fix use-after-free issues"
 
 ## Authentication
 
-By default, `codex exec` will use the same authentication method as Codex CLI and VSCode extension. You can override the api key by setting the `CODEX_API_KEY` environment variable.
+By default, `codex exec` will use the same authentication method as Codex CLI and VSCode extension. You can override the api key by setting the `CODEX_API_KEY` environment variable or by passing `--api-token` for a one-off run.
 
 ```shell
 CODEX_API_KEY=your-api-key-here codex exec "Fix merge conflict"
 ```
 
-NOTE: `CODEX_API_KEY` is only supported in `codex exec`.
+```shell
+codex exec --api-token your-api-key-here "Fix merge conflict"
+```
+
+NOTE: `CODEX_API_KEY` is only supported in `codex exec`. Use `--api-token` for other commands.

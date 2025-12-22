@@ -18,6 +18,15 @@ The legacy `--api-key` flag now exits with an error instructing you to use `--wi
 
 This key must, at minimum, have write access to the Responses API.
 
+### One-off API token (no auth.json)
+
+For a temporary, non-persistent key (for example, inside a container), pass `--api-token`. This sets `CODEX_API_KEY` for the current process only.
+
+```shell
+codex --api-token your-api-key-here "Summarize recent changes"
+codex exec --api-token your-api-key-here "Fix merge conflict"
+```
+
 ## Migrating to ChatGPT login from API key
 
 If you've used the Codex CLI before with usage-based billing via an API key and want to switch to using your ChatGPT plan, follow these steps:

@@ -1,3 +1,4 @@
+use crate::slash_command::slash_commands_enabled;
 use codex_protocol::custom_prompts::CustomPrompt;
 use codex_protocol::custom_prompts::PROMPTS_CMD_PREFIX;
 use lazy_static::lazy_static;
@@ -60,6 +61,9 @@ impl PromptExpansionError {
 /// Returns `(name, rest_after_name)` if the line begins with `/` and contains
 /// a non-empty name; otherwise returns `None`.
 pub fn parse_slash_name(line: &str) -> Option<(&str, &str)> {
+    if !slash_commands_enabled() {
+        return None;
+    }
     let stripped = line.strip_prefix('/')?;
     let mut name_end = stripped.len();
     for (idx, ch) in stripped.char_indices() {

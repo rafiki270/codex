@@ -103,8 +103,15 @@ impl SlashCommand {
     }
 }
 
+pub fn slash_commands_enabled() -> bool {
+    cfg!(test)
+}
+
 /// Return all built-in commands in a Vec paired with their command string.
 pub fn built_in_slash_commands() -> Vec<(&'static str, SlashCommand)> {
+    if !slash_commands_enabled() {
+        return Vec::new();
+    }
     SlashCommand::iter()
         .filter(|command| command.is_visible())
         .map(|c| (c.command(), c))

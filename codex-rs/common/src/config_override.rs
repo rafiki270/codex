@@ -9,7 +9,10 @@
 
 use clap::ArgAction;
 use clap::Parser;
+use clap::ValueHint;
 use serde::de::Error as SerdeError;
+use std::path::Path;
+use std::path::PathBuf;
 use toml::Value;
 
 /// CLI option that captures arbitrary configuration overrides specified as
@@ -34,13 +37,27 @@ pub struct CliConfigOverrides {
         global = true,
     )]
     pub raw_overrides: Vec<String>,
+
+    /// Path to a file whose contents are appended to the system prompt for this run.
+    #[arg(
+        long = "system-prompt-file",
+        value_name = "FILE",
+        value_hint = ValueHint::FilePath,
+        global = true,
+    )]
+    pub system_prompt_file: Option<PathBuf>,
+
+    /// API token to use for this run (sets CODEX_API_KEY for the process).
+    #[arg(long = "api-token", value_name = "TOKEN", global = true)]
+    pub api_token: Option<String>,
 }
 
 impl CliConfigOverrides {
     /// Parse the raw strings captured from the CLI into a list of `(path,
     /// value)` tuples where `value` is a `serde_json::Value`.
     pub fn parse_overrides(&self) -> Result<Vec<(String, Value)>, String> {
-        self.raw_overrides
+        let mut overrides: Vec<(String, Value)> = self
+            .raw_overrides
             .iter()
             .map(|s| {
                 // Only split on the *first* '=' so values are free to contain
@@ -73,7 +90,14 @@ impl CliConfigOverrides {
 
                 Ok((key.to_string(), value))
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if let Some(path) = &self.system_prompt_file {
+            let contents = read_system_prompt_file(path)?;
+            overrides.push(("instructions".to_string(), Value::String(contents)));
+        }
+
+        Ok(overrides)
     }
 
     /// Apply all parsed overrides onto `target`. Intermediate objects will be
@@ -132,6 +156,24 @@ fn apply_single_override(root: &mut Value, path: &str, value: Value) {
     }
 }
 
+fn read_system_prompt_file(path: &Path) -> Result<String, String> {
+    let resolved_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let contents = std::fs::read_to_string(&resolved_path).map_err(|e| {
+        format!(
+            "failed to read system prompt file {}: {e}",
+            resolved_path.display()
+        )
+    })?;
+    let trimmed = contents.trim();
+    if trimmed.is_empty() {
+        return Err(format!(
+            "system prompt file is empty: {}",
+            resolved_path.display()
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
 fn parse_toml_value(raw: &str) -> Result<Value, toml::de::Error> {
     let wrapped = format!("_x_ = {raw}");
     let table: toml::Table = toml::from_str(&wrapped)?;
@@ -144,6 +186,8 @@ fn parse_toml_value(raw: &str) -> Result<Value, toml::de::Error> {
 #[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::SystemTime;
 
     #[test]
     fn parses_basic_scalar() {
@@ -178,5 +222,34 @@ mod tests {
         let tbl = v.as_table().expect("table");
         assert_eq!(tbl.get("a").unwrap().as_integer(), Some(1));
         assert_eq!(tbl.get("b").unwrap().as_integer(), Some(2));
+    }
+
+    #[test]
+    fn parse_overrides_includes_system_prompt_file() {
+        let mut path = std::env::temp_dir();
+        let unique = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        path.push(format!("codex-system-prompt-{unique}.txt"));
+        fs::write(&path, "bible").expect("write");
+
+        let overrides = CliConfigOverrides {
+            raw_overrides: vec![],
+            system_prompt_file: Some(path.clone()),
+            api_token: None,
+        }
+        .parse_overrides()
+        .expect("overrides");
+
+        fs::remove_file(path).ok();
+
+        assert_eq!(
+            overrides,
+            vec![(
+                "instructions".to_string(),
+                Value::String("bible".to_string())
+            )]
+        );
     }
 }
