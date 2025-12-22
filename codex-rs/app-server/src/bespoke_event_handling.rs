@@ -3,6 +3,7 @@ use crate::codex_message_processor::PendingInterrupts;
 use crate::codex_message_processor::TurnSummary;
 use crate::codex_message_processor::TurnSummaryStore;
 use crate::outgoing_message::OutgoingMessageSender;
+use crate::usage_reporting::UsageReporter;
 use codex_app_server_protocol::AccountRateLimitsUpdatedNotification;
 use codex_app_server_protocol::AgentMessageDeltaNotification;
 use codex_app_server_protocol::ApplyPatchApprovalParams;
@@ -86,6 +87,7 @@ pub(crate) async fn apply_bespoke_event_handling(
     pending_interrupts: PendingInterrupts,
     turn_summary_store: TurnSummaryStore,
     api_version: ApiVersion,
+    usage_reporter: Option<UsageReporter>,
 ) {
     let Event {
         id: event_turn_id,
@@ -98,6 +100,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                 event_turn_id,
                 &outgoing,
                 &turn_summary_store,
+                usage_reporter.as_ref(),
             )
             .await;
         }
@@ -333,8 +336,14 @@ pub(crate) async fn apply_bespoke_event_handling(
                 .await;
         }
         EventMsg::TokenCount(token_count_event) => {
-            handle_token_count_event(conversation_id, event_turn_id, token_count_event, &outgoing)
-                .await;
+            handle_token_count_event(
+                conversation_id,
+                event_turn_id,
+                token_count_event,
+                &outgoing,
+                usage_reporter.as_ref(),
+            )
+            .await;
         }
         EventMsg::Error(ev) => {
             let turn_error = TurnError {
@@ -685,6 +694,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                 event_turn_id,
                 &outgoing,
                 &turn_summary_store,
+                usage_reporter.as_ref(),
             )
             .await;
         }
@@ -875,6 +885,7 @@ async fn handle_turn_complete(
     event_turn_id: String,
     outgoing: &OutgoingMessageSender,
     turn_summary_store: &TurnSummaryStore,
+    usage_reporter: Option<&UsageReporter>,
 ) {
     let turn_summary = find_and_remove_turn_summary(conversation_id, turn_summary_store).await;
 
@@ -882,6 +893,11 @@ async fn handle_turn_complete(
         Some(error) => (TurnStatus::Failed, Some(error)),
         None => (TurnStatus::Completed, None),
     };
+
+    if let Some(usage_reporter) = usage_reporter {
+        let turn_id = event_turn_id.clone();
+        usage_reporter.clear_turn(conversation_id, &turn_id).await;
+    }
 
     emit_turn_completed_with_status(conversation_id, event_turn_id, status, error, outgoing).await;
 }
@@ -891,8 +907,14 @@ async fn handle_turn_interrupted(
     event_turn_id: String,
     outgoing: &OutgoingMessageSender,
     turn_summary_store: &TurnSummaryStore,
+    usage_reporter: Option<&UsageReporter>,
 ) {
     find_and_remove_turn_summary(conversation_id, turn_summary_store).await;
+
+    if let Some(usage_reporter) = usage_reporter {
+        let turn_id = event_turn_id.clone();
+        usage_reporter.clear_turn(conversation_id, &turn_id).await;
+    }
 
     emit_turn_completed_with_status(
         conversation_id,
@@ -909,13 +931,20 @@ async fn handle_token_count_event(
     turn_id: String,
     token_count_event: TokenCountEvent,
     outgoing: &OutgoingMessageSender,
+    usage_reporter: Option<&UsageReporter>,
 ) {
     let TokenCountEvent { info, rate_limits } = token_count_event;
-    if let Some(token_usage) = info.map(ThreadTokenUsage::from) {
+    if let Some(info) = info {
+        if let Some(usage_reporter) = usage_reporter {
+            let last_usage = info.last_token_usage.clone();
+            usage_reporter
+                .report_usage(conversation_id, turn_id.clone(), &last_usage)
+                .await;
+        }
         let notification = ThreadTokenUsageUpdatedNotification {
             thread_id: conversation_id.to_string(),
             turn_id,
-            token_usage,
+            token_usage: ThreadTokenUsage::from(info),
         };
         outgoing
             .send_server_notification(ServerNotification::ThreadTokenUsageUpdated(notification))
@@ -1369,6 +1398,7 @@ mod tests {
             event_turn_id.clone(),
             &outgoing,
             &turn_summary_store,
+            None,
         )
         .await;
 
@@ -1410,6 +1440,7 @@ mod tests {
             event_turn_id.clone(),
             &outgoing,
             &turn_summary_store,
+            None,
         )
         .await;
 
@@ -1451,6 +1482,7 @@ mod tests {
             event_turn_id.clone(),
             &outgoing,
             &turn_summary_store,
+            None,
         )
         .await;
 
@@ -1573,6 +1605,7 @@ mod tests {
                 rate_limits: Some(rate_limits),
             },
             &outgoing,
+            None,
         )
         .await;
 
@@ -1626,6 +1659,7 @@ mod tests {
                 rate_limits: None,
             },
             &outgoing,
+            None,
         )
         .await;
 
@@ -1700,6 +1734,7 @@ mod tests {
             a_turn1.clone(),
             &outgoing,
             &turn_summary_store,
+            None,
         )
         .await;
 
@@ -1719,6 +1754,7 @@ mod tests {
             b_turn1.clone(),
             &outgoing,
             &turn_summary_store,
+            None,
         )
         .await;
 
@@ -1729,6 +1765,7 @@ mod tests {
             a_turn2.clone(),
             &outgoing,
             &turn_summary_store,
+            None,
         )
         .await;
 

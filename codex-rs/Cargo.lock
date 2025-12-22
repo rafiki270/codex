@@ -1006,6 +1006,7 @@ dependencies = [
  "mcp-types",
  "os_info",
  "pretty_assertions",
+ "reqwest",
  "serde",
  "serde_json",
  "serial_test",

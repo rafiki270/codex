@@ -5,6 +5,7 @@ use crate::fuzzy_file_search::run_fuzzy_file_search;
 use crate::models::supported_models;
 use crate::outgoing_message::OutgoingMessageSender;
 use crate::outgoing_message::OutgoingNotification;
+use crate::usage_reporting::UsageReporter;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_app_server_protocol::Account;
@@ -222,6 +223,7 @@ pub(crate) struct CodexMessageProcessor {
     pending_interrupts: PendingInterrupts,
     turn_summary_store: TurnSummaryStore,
     pending_fuzzy_searches: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    usage_reporter: Option<UsageReporter>,
     feedback: CodexFeedback,
 }
 
@@ -277,6 +279,7 @@ impl CodexMessageProcessor {
             pending_interrupts: Arc::new(Mutex::new(HashMap::new())),
             turn_summary_store: Arc::new(Mutex::new(HashMap::new())),
             pending_fuzzy_searches: Arc::new(Mutex::new(HashMap::new())),
+            usage_reporter: UsageReporter::from_env(),
             feedback,
         }
     }
@@ -1298,6 +1301,16 @@ impl CodexMessageProcessor {
                     session_configured,
                     ..
                 } = conversation_id;
+                let usage_reporter = self.usage_reporter.clone();
+                if let Some(usage_reporter) = usage_reporter {
+                    usage_reporter
+                        .register_conversation(
+                            conversation_id,
+                            session_configured.model.clone(),
+                            session_configured.model_provider_id.clone(),
+                        )
+                        .await;
+                }
                 let response = NewConversationResponse {
                     conversation_id,
                     model: session_configured.model,
@@ -1381,6 +1394,16 @@ impl CodexMessageProcessor {
                     sandbox_policy,
                     ..
                 } = session_configured;
+                let usage_reporter = self.usage_reporter.clone();
+                if let Some(usage_reporter) = usage_reporter {
+                    usage_reporter
+                        .register_conversation(
+                            conversation_id,
+                            model.clone(),
+                            model_provider_id.clone(),
+                        )
+                        .await;
+                }
                 let response = ThreadStartResponse {
                     thread: thread.clone(),
                     model,
@@ -1675,6 +1698,16 @@ impl CodexMessageProcessor {
                 session_configured,
                 ..
             }) => {
+                let usage_reporter = self.usage_reporter.clone();
+                if let Some(usage_reporter) = usage_reporter {
+                    usage_reporter
+                        .register_conversation(
+                            conversation_id,
+                            session_configured.model.clone(),
+                            session_configured.model_provider_id.clone(),
+                        )
+                        .await;
+                }
                 let SessionConfiguredEvent {
                     rollout_path,
                     initial_messages,
@@ -2326,6 +2359,16 @@ impl CodexMessageProcessor {
                 session_configured,
                 ..
             }) => {
+                let usage_reporter = self.usage_reporter.clone();
+                if let Some(usage_reporter) = usage_reporter {
+                    usage_reporter
+                        .register_conversation(
+                            conversation_id,
+                            session_configured.model.clone(),
+                            session_configured.model_provider_id.clone(),
+                        )
+                        .await;
+                }
                 self.outgoing
                     .send_server_notification(ServerNotification::SessionConfigured(
                         SessionConfiguredNotification {
@@ -2893,6 +2936,17 @@ impl CodexMessageProcessor {
                 data: None,
             })?;
 
+        let usage_reporter = self.usage_reporter.clone();
+        if let Some(usage_reporter) = usage_reporter {
+            usage_reporter
+                .register_conversation(
+                    conversation_id,
+                    session_configured.model.clone(),
+                    session_configured.model_provider_id.clone(),
+                )
+                .await;
+        }
+
         if let Err(err) = self
             .attach_conversation_listener(conversation_id, false, ApiVersion::V2)
             .await
@@ -3096,6 +3150,7 @@ impl CodexMessageProcessor {
         let pending_interrupts = self.pending_interrupts.clone();
         let turn_summary_store = self.turn_summary_store.clone();
         let api_version_for_task = api_version;
+        let usage_reporter = self.usage_reporter.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -3153,6 +3208,7 @@ impl CodexMessageProcessor {
                             pending_interrupts.clone(),
                             turn_summary_store.clone(),
                             api_version_for_task,
+                            usage_reporter.clone(),
                         )
                         .await;
                     }
