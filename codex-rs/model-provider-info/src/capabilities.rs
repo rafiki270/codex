@@ -17,6 +17,10 @@ pub struct ModelProviderCapabilities {
     pub cyber_access_programs: Option<bool>,
     /// Whether hosted web search may access the live web.
     pub external_web_access: Option<bool>,
+    /// Whether the provider supports the standalone Images generation and edit APIs.
+    /// Explicitly enables the native image tool for custom provider authentication;
+    /// omission preserves existing authentication requirements.
+    pub image_generation: Option<bool>,
     /// Remote context-compaction protocol; omission preserves provider defaults.
     pub remote_compaction: Option<RemoteCompactionSupport>,
 }

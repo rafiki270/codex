@@ -33,3 +33,28 @@ fn capability_overrides_preserve_unspecified_provider_defaults() {
         );
     }
 }
+
+#[test]
+fn image_generation_override_preserves_other_capabilities() {
+    for enabled in [false, true] {
+        let info = ModelProviderInfo::default();
+        let defaults = create_model_provider(info.clone(), None).capabilities();
+        let provider = create_model_provider(
+            ModelProviderInfo {
+                capabilities: Some(ModelProviderCapabilities {
+                    image_generation: Some(enabled),
+                    ..Default::default()
+                }),
+                ..info
+            },
+            None,
+        );
+        assert_eq!(
+            provider.capabilities(),
+            ProviderCapabilities {
+                image_generation: enabled,
+                ..defaults
+            },
+        );
+    }
+}

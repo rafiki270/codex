@@ -199,6 +199,7 @@ fn model_provider_from_proto(
             .capabilities
             .map(|capabilities| ModelProviderCapabilities {
                 cyber_access_programs: capabilities.cyber_access_programs,
+                image_generation: capabilities.image_generation,
                 ..Default::default()
             }),
         project_id: provider.project_id,
@@ -254,6 +255,7 @@ fn model_provider_to_proto(
         auth: auth.map(model_provider_auth_to_proto),
         capabilities: capabilities.map(|capabilities| proto::ModelProviderCapabilities {
             cyber_access_programs: capabilities.cyber_access_programs,
+            image_generation: capabilities.image_generation,
         }),
         wire_api: proto_wire_api(wire_api).into(),
         query_params: query_params.map(proto_string_map),
@@ -473,6 +475,14 @@ mod tests {
             None,
             Some(ModelProviderCapabilities::default()),
             Some(ModelProviderCapabilities {
+                image_generation: Some(false),
+                ..Default::default()
+            }),
+            Some(ModelProviderCapabilities {
+                image_generation: Some(true),
+                ..Default::default()
+            }),
+            Some(ModelProviderCapabilities {
                 cyber_access_programs: Some(false),
                 ..Default::default()
             }),
@@ -520,6 +530,7 @@ mod tests {
                             ),
                             capabilities: Some(proto::ModelProviderCapabilities {
                                 cyber_access_programs: Some(true),
+                                image_generation: None,
                             }),
                             credential_file: None,
                             env_key: None,

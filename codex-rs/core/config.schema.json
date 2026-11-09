@@ -3177,6 +3177,10 @@
           "description": "Whether hosted web search may access the live web.",
           "type": "boolean"
         },
+        "image_generation": {
+          "description": "Whether the provider supports the standalone Images generation and edit APIs. Explicitly enables the native image tool for custom provider authentication; omission preserves existing authentication requirements.",
+          "type": "boolean"
+        },
         "remote_compaction": {
           "allOf": [
             {

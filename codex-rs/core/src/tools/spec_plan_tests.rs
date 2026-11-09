@@ -11,6 +11,7 @@ use codex_model_provider_info::AMAZON_BEDROCK_GPT_5_5_MODEL_ID;
 use codex_model_provider_info::AMAZON_BEDROCK_GPT_5_6_LUNA_MODEL_ID;
 use codex_model_provider_info::AMAZON_BEDROCK_GPT_5_6_SOL_MODEL_ID;
 use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
+use codex_model_provider_info::ModelProviderCapabilities;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
@@ -3224,6 +3225,108 @@ async fn hosted_web_search_fallback_follows_winning_browser_runtime() {
     };
     assert_eq!(namespace.description, "Tools from browser_collision.");
     plan.assert_visible_contains(&["web_search"]);
+}
+
+#[tokio::test]
+async fn custom_image_generation_requires_explicit_opt_in_and_runtime_support() {
+    for (override_value, feature_enabled, image_input, expected_visible) in [
+        (None, true, true, false),
+        (Some(false), true, true, false),
+        (Some(true), true, true, true),
+        (Some(true), false, true, false),
+        (Some(true), true, false, false),
+    ] {
+        let plan = probe_with(
+            |turn| {
+                let provider_info = ModelProviderInfo {
+                    name: "Custom images".to_string(),
+                    requires_openai_auth: false,
+                    capabilities: Some(ModelProviderCapabilities {
+                        image_generation: override_value,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                };
+                update_config(turn, |config| {
+                    config.model_provider_id = "custom-images".to_string();
+                    config.model_provider = provider_info.clone();
+                });
+                turn.provider = create_model_provider(provider_info, turn.auth_manager.clone());
+                set_feature(turn, Feature::ImageGeneration, feature_enabled);
+                update_turn_settings_for_test(turn, |settings| {
+                    Arc::make_mut(&mut settings.model_info).input_modalities = if image_input {
+                        vec![InputModality::Image]
+                    } else {
+                        vec![InputModality::Text]
+                    };
+                });
+            },
+            ToolPlanInputs {
+                extension_tool_executors: vec![Arc::new(TestNamespaceExtensionTool {
+                    namespace: "image_gen",
+                    tool_name: "imagegen",
+                })],
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            plan.visible_names.iter().any(|name| name == "image_gen"),
+            expected_visible,
+            "override={override_value:?}, feature={feature_enabled}, image_input={image_input}",
+        );
+    }
+}
+
+#[tokio::test]
+async fn custom_image_opt_in_uses_its_own_authentication_instead_of_a_cached_plan() {
+    for (requires_openai_auth, override_value, expected_visible) in [
+        (false, Some(true), true),
+        (false, None, false),
+        (true, Some(true), false),
+        (true, None, false),
+    ] {
+        let plan = probe_with(
+            |turn| {
+                let auth = CodexAuth::from_external_chatgpt_tokens(
+                    "e30.e30.signature",
+                    "test-account",
+                    Some("free"),
+                )
+                .unwrap();
+                turn.auth_manager = Some(AuthManager::from_auth_for_testing(auth));
+                let provider_info = ModelProviderInfo {
+                    name: "Images gateway".to_string(),
+                    requires_openai_auth,
+                    capabilities: Some(ModelProviderCapabilities {
+                        image_generation: override_value,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                };
+                update_config(turn, |config| config.model_provider = provider_info.clone());
+                turn.provider = create_model_provider(provider_info, turn.auth_manager.clone());
+                set_feature(turn, Feature::ImageGeneration, true);
+                update_turn_settings_for_test(turn, |settings| {
+                    Arc::make_mut(&mut settings.model_info).input_modalities =
+                        vec![InputModality::Image];
+                });
+            },
+            ToolPlanInputs {
+                extension_tool_executors: vec![Arc::new(TestNamespaceExtensionTool {
+                    namespace: "image_gen",
+                    tool_name: "imagegen",
+                })],
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            plan.visible_names.iter().any(|name| name == "image_gen"),
+            expected_visible,
+            "requires_openai_auth={requires_openai_auth}, override={override_value:?}",
+        );
+    }
 }
 
 #[tokio::test]
